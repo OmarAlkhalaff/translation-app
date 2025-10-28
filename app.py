@@ -28,7 +28,7 @@ def translate_text(message, history):
         return f"Translation error: {str(e)}"
 
 def translate_document(file, output_format, progress=gr.Progress()):
-    """Translate uploaded document and create downloadable file"""
+    """Translate uploaded document with complete segment tracking"""
     if file is None:
         return "Please upload a document first.", None
     
@@ -38,14 +38,60 @@ def translate_document(file, output_format, progress=gr.Progress()):
         
         progress(0.2, desc="Segmenting text...")
         segments = segment_text(text)
+        total_segments = len(segments)
         
-        progress(0.3, desc=f"Translating {len(segments)} segments...")
+        if total_segments == 0:
+            return "No text found in document.", None
         
-        # Parallel translation
+        progress(0.3, desc=f"Translating {total_segments} segments...")
+        
+        # Track translation results
+        translated_segments = []
+        failed_segments = []
+        
+        # Parallel translation with result tracking
         with ThreadPoolExecutor(max_workers=4) as executor:
-            translated_segments = list(executor.map(translate_segment, segments))
+            # Submit all translation tasks
+            future_to_index = {executor.submit(translate_segment, segment): i 
+                             for i, segment in enumerate(segments)}
+            
+            # Collect results with tracking
+            results = [None] * total_segments
+            completed = 0
+            
+            for future in future_to_index:
+                index = future_to_index[future]
+                try:
+                    result = future.result()
+                    # Check if translation failed
+                    if result.startswith("Error:"):
+                        failed_segments.append(index + 1)
+                        results[index] = f"[TRANSLATION FAILED: Segment {index + 1}]"
+                    else:
+                        results[index] = result
+                    
+                    completed += 1
+                    progress(0.3 + (completed / total_segments) * 0.6, 
+                           desc=f"Translated {completed}/{total_segments} segments")
+                    
+                except Exception as e:
+                    failed_segments.append(index + 1)
+                    results[index] = f"[TRANSLATION FAILED: Segment {index + 1}]"
+                    completed += 1
         
-        translated_text = "\n\n".join(translated_segments)
+        # Verify all segments were processed
+        if None in results:
+            missing_count = results.count(None)
+            return f"Translation incomplete: {missing_count} segments failed to process.", None
+        
+        # Check for failed translations
+        if failed_segments:
+            error_msg = f"Translation completed with errors in segments: {', '.join(map(str, failed_segments))}\n\n"
+            error_msg += "\n\n".join(results)
+            return error_msg, None
+        
+        # All segments successfully translated
+        translated_text = "\n\n".join(results)
         
         progress(0.9, desc="Creating download file...")
         
@@ -59,8 +105,9 @@ def translate_document(file, output_format, progress=gr.Progress()):
         else:
             file_path = create_txt_file(translated_text)
         
-        progress(1.0, desc="Complete!")
-        return translated_text, file_path
+        progress(1.0, desc=f"Complete! All {total_segments} segments translated successfully.")
+        success_msg = f"✅ Translation completed successfully!\n{total_segments} segments processed.\n\n{translated_text}"
+        return success_msg, file_path
         
     except Exception as e:
         return f"Document processing error: {str(e)}", None
