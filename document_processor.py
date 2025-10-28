@@ -8,6 +8,11 @@ try:
     nltk.data.find('tokenizers/punkt')
 except LookupError:
     nltk.download('punkt')
+    
+try:
+    nltk.data.find('tokenizers/punkt_tab')
+except LookupError:
+    nltk.download('punkt_tab')
 
 def extract_text_from_pdf(file_bytes):
     """Extract text from PDF file"""
@@ -31,7 +36,13 @@ def extract_text_from_txt(file_bytes):
 
 def segment_text(text, max_chars=400):
     """Split text into segments for translation"""
-    sentences = nltk.sent_tokenize(text)
+    try:
+        sentences = nltk.sent_tokenize(text)
+    except LookupError:
+        # Fallback to simple splitting if NLTK fails
+        sentences = text.split('. ')
+        sentences = [s + '.' for s in sentences[:-1]] + [sentences[-1]]
+    
     segments = []
     current_segment = ""
     
