@@ -50,14 +50,24 @@ def segment_text(text, max_chars=400):
 
 def process_document(file):
     """Process uploaded document and extract text"""
-    file_extension = file.name.lower().split('.')[-1]
+    # Handle Gradio file object
+    if hasattr(file, 'name'):
+        file_path = file.name
+    else:
+        file_path = file
+    
+    file_extension = file_path.lower().split('.')[-1]
+    
+    # Read file content
+    with open(file_path, 'rb') as f:
+        file_bytes = f.read()
     
     if file_extension == 'pdf':
-        text = extract_text_from_pdf(file.read())
+        text = extract_text_from_pdf(file_bytes)
     elif file_extension == 'docx':
-        text = extract_text_from_docx(file.read())
+        text = extract_text_from_docx(file_bytes)
     elif file_extension == 'txt':
-        text = extract_text_from_txt(file.read())
+        text = extract_text_from_txt(file_bytes)
     else:
         raise ValueError(f"Unsupported file format: {file_extension}")
     
