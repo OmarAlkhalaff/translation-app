@@ -4,6 +4,7 @@ from concurrent.futures import ThreadPoolExecutor
 from document_processor import process_document, segment_text
 from document_output import create_txt_file, create_docx_file, create_pdf_file
 import time
+import tempfile
 
 # Load translation model
 model_name = "Helsinki-NLP/opus-mt-en-ar"
