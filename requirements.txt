@@ -3,3 +3,6 @@ transformers
 torch
 sentencepiece
 sacremoses
+PyPDF2
+python-docx
+nltk
