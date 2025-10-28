@@ -28,13 +28,34 @@ def translate_text(message, history):
         return f"Translation error: {str(e)}"
 
 def translate_document(file, output_format, progress=gr.Progress()):
-    """Translate uploaded document with complete segment tracking"""
+    """Translate uploaded document with table/figure support and complete tracking"""
     if file is None:
         return "Please upload a document first.", None
     
     try:
-        progress(0, desc="Extracting text...")
-        text = process_document(file)
+        progress(0, desc="Extracting text and elements...")
+        text, element_processor = process_document(file)
+        
+        if text is None:
+            return "Failed to extract text from document.", None
+        
+        # Handle documents with tables/figures (DOCX)
+        if element_processor:
+            progress(0.1, desc="Processing tables and figures...")
+            
+            # Translate tables if present
+            table_errors = []
+            for table_id in element_processor.tables:
+                success = element_processor.translate_table_cells(table_id, translate_segment)
+                if not success:
+                    table_errors.append(table_id)
+            
+            # Check for element processing errors
+            summary = element_processor.get_processing_summary()
+            if summary['errors']:
+                error_details = "\n".join([f"⚠️ {error}" for error in summary['errors']])
+                if table_errors:
+                    return f"Element processing failed:\n{error_details}", None
         
         progress(0.2, desc="Segmenting text...")
         segments = segment_text(text)
@@ -46,7 +67,6 @@ def translate_document(file, output_format, progress=gr.Progress()):
         progress(0.3, desc=f"Translating {total_segments} segments...")
         
         # Track translation results
-        translated_segments = []
         failed_segments = []
         
         # Parallel translation with result tracking
@@ -71,7 +91,7 @@ def translate_document(file, output_format, progress=gr.Progress()):
                         results[index] = result
                     
                     completed += 1
-                    progress(0.3 + (completed / total_segments) * 0.6, 
+                    progress(0.3 + (completed / total_segments) * 0.5, 
                            desc=f"Translated {completed}/{total_segments} segments")
                     
                 except Exception as e:
@@ -93,10 +113,19 @@ def translate_document(file, output_format, progress=gr.Progress()):
         # All segments successfully translated
         translated_text = "\n\n".join(results)
         
-        progress(0.9, desc="Creating download file...")
+        progress(0.85, desc="Creating download file...")
         
         # Create downloadable file based on format
-        if output_format == "TXT":
+        if output_format == "DOCX" and element_processor:
+            # Enhanced DOCX with tables/figures
+            temp_file = tempfile.NamedTemporaryFile(suffix='.docx', delete=False)
+            success = element_processor.reconstruct_docx(translated_text, temp_file.name)
+            if not success:
+                # Fallback to simple DOCX
+                file_path = create_docx_file(translated_text)
+            else:
+                file_path = temp_file.name
+        elif output_format == "TXT":
             file_path = create_txt_file(translated_text)
         elif output_format == "DOCX":
             file_path = create_docx_file(translated_text)
@@ -105,8 +134,21 @@ def translate_document(file, output_format, progress=gr.Progress()):
         else:
             file_path = create_txt_file(translated_text)
         
-        progress(1.0, desc=f"Complete! All {total_segments} segments translated successfully.")
-        success_msg = f"✅ Translation completed successfully!\n{total_segments} segments processed.\n\n{translated_text}"
+        # Prepare success message with element summary
+        success_msg = f"✅ Translation completed successfully!\n{total_segments} segments processed."
+        
+        if element_processor:
+            summary = element_processor.get_processing_summary()
+            if summary['tables']['total'] > 0 or summary['figures']['total'] > 0:
+                success_msg += f"\n\n📄 Elements processed:"
+                success_msg += f"\n• Tables: {summary['tables']['successful']}/{summary['tables']['total']}"
+                success_msg += f"\n• Figures: {summary['figures']['successful']}/{summary['figures']['total']}"
+                
+                if summary['errors']:
+                    success_msg += f"\n\n⚠️ Warnings:\n" + "\n".join([f"• {error}" for error in summary['errors']])
+        
+        progress(1.0, desc="Complete!")
+        success_msg += f"\n\n{translated_text}"
         return success_msg, file_path
         
     except Exception as e:

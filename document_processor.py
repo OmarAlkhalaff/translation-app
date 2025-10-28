@@ -69,17 +69,28 @@ def process_document(file):
     
     file_extension = file_path.lower().split('.')[-1]
     
-    # Read file content
-    with open(file_path, 'rb') as f:
-        file_bytes = f.read()
-    
     if file_extension == 'pdf':
+        # Read file content for PDF
+        with open(file_path, 'rb') as f:
+            file_bytes = f.read()
         text = extract_text_from_pdf(file_bytes)
+        return text, None  # No element processor for PDF yet
     elif file_extension == 'docx':
-        text = extract_text_from_docx(file_bytes)
+        # Use enhanced processor for DOCX
+        from document_elements import DocumentProcessor
+        processor = DocumentProcessor()
+        text = processor.extract_docx_elements(file_path)
+        return text, processor
     elif file_extension == 'txt':
+        # Read file content for TXT
+        with open(file_path, 'rb') as f:
+            file_bytes = f.read()
         text = extract_text_from_txt(file_bytes)
+        return text, None  # No element processor for TXT
     else:
         raise ValueError(f"Unsupported file format: {file_extension}")
-    
+
+def process_document_simple(file):
+    """Simple document processing (backward compatibility)"""
+    text, _ = process_document(file)
     return text
