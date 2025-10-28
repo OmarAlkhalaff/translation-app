@@ -6,3 +6,4 @@ sacremoses
 PyPDF2
 python-docx
 nltk
+reportlab
