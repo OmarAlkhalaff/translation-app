@@ -135,29 +135,61 @@ class DocumentProcessor:
         try:
             doc = Document()
             
-            # Split text by placeholders and reconstruct
-            parts = translated_text.split('\n')
+            # Process text line by line, looking for placeholders
+            lines = translated_text.split('\n')
+            current_paragraph = ""
             
-            for part in parts:
-                part = part.strip()
-                if not part:
-                    continue
-                    
+            for line in lines:
+                line = line.strip()
+                
                 # Check for table placeholder
-                if part.startswith('[TABLE_') and part.endswith(']'):
-                    table_id = part[1:-1]  # Remove brackets
-                    if not self._insert_table(doc, table_id):
-                        self.processing_errors.append(f"{table_id}: Failed to insert into document")
+                if '[TABLE_' in line and ']' in line:
+                    # Add any accumulated text first
+                    if current_paragraph:
+                        doc.add_paragraph(current_paragraph)
+                        current_paragraph = ""
+                    
+                    # Extract table ID and insert table
+                    import re
+                    table_match = re.search(r'\[TABLE_\d{3}\]', line)
+                    if table_match:
+                        table_id = table_match.group(0)[1:-1]  # Remove brackets
+                        if not self._insert_table(doc, table_id):
+                            self.processing_errors.append(f"{table_id}: Failed to insert into document")
+                            doc.add_paragraph(f"[{table_id} - Failed to insert]")
                 
                 # Check for figure placeholder
-                elif part.startswith('[FIGURE_') and part.endswith(']'):
-                    figure_id = part[1:-1]
-                    if not self._insert_figure_placeholder(doc, figure_id):
-                        self.processing_errors.append(f"{figure_id}: Failed to insert into document")
+                elif '[FIGURE_' in line and ']' in line:
+                    # Add any accumulated text first
+                    if current_paragraph:
+                        doc.add_paragraph(current_paragraph)
+                        current_paragraph = ""
+                    
+                    # Extract figure ID and insert placeholder
+                    import re
+                    figure_match = re.search(r'\[FIGURE_\d{3}\]', line)
+                    if figure_match:
+                        figure_id = figure_match.group(0)[1:-1]
+                        if not self._insert_figure_placeholder(doc, figure_id):
+                            self.processing_errors.append(f"{figure_id}: Failed to insert into document")
+                            doc.add_paragraph(f"[{figure_id} - Failed to insert]")
                 
-                # Regular text
+                # Regular text - accumulate for paragraph
+                elif line:
+                    if current_paragraph:
+                        current_paragraph += " " + line
+                    else:
+                        current_paragraph = line
+                
+                # Empty line - end current paragraph
                 else:
-                    doc.add_paragraph(part)
+                    if current_paragraph:
+                        doc.add_paragraph(current_paragraph)
+                        current_paragraph = ""
+            
+            # Add any remaining text
+            if current_paragraph:
+                doc.add_paragraph(current_paragraph)
             
             doc.save(output_path)
             return True

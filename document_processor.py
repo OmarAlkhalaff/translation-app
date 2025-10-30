@@ -35,19 +35,41 @@ def extract_text_from_txt(file_bytes):
     return file_bytes.decode('utf-8')
 
 def segment_text(text, max_chars=400):
-    """Split text into segments for translation"""
+    """Split text into segments for translation, preserving placeholders"""
+    import re
+    
+    # Extract placeholders and replace with markers
+    placeholders = {}
+    placeholder_pattern = r'\[(TABLE_\d{3}|FIGURE_\d{3})\]'
+    
+    def replace_placeholder(match):
+        marker = f"__PLACEHOLDER_{len(placeholders)}__"
+        placeholders[marker] = match.group(0)
+        return marker
+    
+    text_with_markers = re.sub(placeholder_pattern, replace_placeholder, text)
+    
+    # Segment the text
     try:
-        sentences = nltk.sent_tokenize(text)
+        sentences = nltk.sent_tokenize(text_with_markers)
     except LookupError:
         # Fallback to simple splitting if NLTK fails
-        sentences = text.split('. ')
+        sentences = text_with_markers.split('. ')
         sentences = [s + '.' for s in sentences[:-1]] + [sentences[-1]]
     
     segments = []
     current_segment = ""
     
     for sentence in sentences:
-        if len(current_segment + sentence) <= max_chars:
+        # Check if sentence contains a placeholder marker
+        if '__PLACEHOLDER_' in sentence:
+            # Add current segment if exists
+            if current_segment:
+                segments.append(current_segment.strip())
+                current_segment = ""
+            # Add placeholder as separate segment
+            segments.append(sentence.strip())
+        elif len(current_segment + sentence) <= max_chars:
             current_segment += sentence + " "
         else:
             if current_segment:
@@ -57,7 +79,14 @@ def segment_text(text, max_chars=400):
     if current_segment:
         segments.append(current_segment.strip())
     
-    return segments
+    # Restore placeholders
+    restored_segments = []
+    for segment in segments:
+        for marker, placeholder in placeholders.items():
+            segment = segment.replace(marker, placeholder)
+        restored_segments.append(segment)
+    
+    return restored_segments
 
 def process_document(file):
     """Process uploaded document and extract text"""
