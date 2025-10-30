@@ -133,63 +133,63 @@ class DocumentProcessor:
     def reconstruct_docx(self, translated_text, output_path):
         """Reconstruct DOCX with translated content and elements"""
         try:
+            import re
             doc = Document()
             
-            # Process text line by line, looking for placeholders
-            lines = translated_text.split('\n')
-            current_paragraph = ""
+            # Split by double newlines to preserve paragraph structure
+            paragraphs = translated_text.split('\n\n')
             
-            for line in lines:
-                line = line.strip()
+            for para in paragraphs:
+                para = para.strip()
+                if not para:
+                    continue
                 
-                # Check for table placeholder
-                if '[TABLE_' in line and ']' in line:
-                    # Add any accumulated text first
-                    if current_paragraph:
-                        doc.add_paragraph(current_paragraph)
-                        current_paragraph = ""
+                # Check if this paragraph contains only a table placeholder
+                table_match = re.fullmatch(r'\[TABLE_\d{3}\]', para)
+                if table_match:
+                    table_id = para[1:-1]  # Remove brackets
+                    if not self._insert_table(doc, table_id):
+                        self.processing_errors.append(f"{table_id}: Failed to insert")
+                        doc.add_paragraph(f"[{table_id} - Failed to insert]")
+                    continue
+                
+                # Check if this paragraph contains only a figure placeholder
+                figure_match = re.fullmatch(r'\[FIGURE_\d{3}\]', para)
+                if figure_match:
+                    figure_id = para[1:-1]
+                    if not self._insert_figure_placeholder(doc, figure_id):
+                        self.processing_errors.append(f"{figure_id}: Failed to insert")
+                        doc.add_paragraph(f"[{figure_id} - Failed to insert]")
+                    continue
+                
+                # Check if paragraph contains placeholders mixed with text
+                if '[TABLE_' in para or '[FIGURE_' in para:
+                    # Split by placeholders and process each part
+                    parts = re.split(r'(\[(?:TABLE|FIGURE)_\d{3}\])', para)
                     
-                    # Extract table ID and insert table
-                    import re
-                    table_match = re.search(r'\[TABLE_\d{3}\]', line)
-                    if table_match:
-                        table_id = table_match.group(0)[1:-1]  # Remove brackets
-                        if not self._insert_table(doc, table_id):
-                            self.processing_errors.append(f"{table_id}: Failed to insert into document")
-                            doc.add_paragraph(f"[{table_id} - Failed to insert]")
-                
-                # Check for figure placeholder
-                elif '[FIGURE_' in line and ']' in line:
-                    # Add any accumulated text first
-                    if current_paragraph:
-                        doc.add_paragraph(current_paragraph)
-                        current_paragraph = ""
-                    
-                    # Extract figure ID and insert placeholder
-                    import re
-                    figure_match = re.search(r'\[FIGURE_\d{3}\]', line)
-                    if figure_match:
-                        figure_id = figure_match.group(0)[1:-1]
-                        if not self._insert_figure_placeholder(doc, figure_id):
-                            self.processing_errors.append(f"{figure_id}: Failed to insert into document")
-                            doc.add_paragraph(f"[{figure_id} - Failed to insert]")
-                
-                # Regular text - accumulate for paragraph
-                elif line:
-                    if current_paragraph:
-                        current_paragraph += " " + line
-                    else:
-                        current_paragraph = line
-                
-                # Empty line - end current paragraph
+                    for part in parts:
+                        part = part.strip()
+                        if not part:
+                            continue
+                        
+                        # Check if it's a table placeholder
+                        if re.fullmatch(r'\[TABLE_\d{3}\]', part):
+                            table_id = part[1:-1]
+                            if not self._insert_table(doc, table_id):
+                                doc.add_paragraph(f"[{table_id} - Failed]")
+                        
+                        # Check if it's a figure placeholder
+                        elif re.fullmatch(r'\[FIGURE_\d{3}\]', part):
+                            figure_id = part[1:-1]
+                            if not self._insert_figure_placeholder(doc, figure_id):
+                                doc.add_paragraph(f"[{figure_id} - Failed]")
+                        
+                        # Regular text
+                        else:
+                            doc.add_paragraph(part)
                 else:
-                    if current_paragraph:
-                        doc.add_paragraph(current_paragraph)
-                        current_paragraph = ""
-            
-            # Add any remaining text
-            if current_paragraph:
-                doc.add_paragraph(current_paragraph)
+                    # Regular paragraph with no placeholders
+                    doc.add_paragraph(para)
             
             doc.save(output_path)
             return True
@@ -204,19 +204,29 @@ class DocumentProcessor:
             return False
         
         table_info = self.tables[table_id]
-        if 'translated_data' not in table_info:
+        
+        # Use translated data if available, otherwise use original data
+        if 'translated_data' in table_info:
+            data = table_info['translated_data']
+        elif 'data' in table_info:
+            data = table_info['data']
+        else:
             return False
         
         try:
-            data = table_info['translated_data']
+            if not data or len(data) == 0:
+                return False
+                
             table = doc.add_table(rows=len(data), cols=len(data[0]))
+            table.style = 'Table Grid'
             
             for row_idx, row_data in enumerate(data):
                 for col_idx, cell_text in enumerate(row_data):
-                    table.cell(row_idx, col_idx).text = cell_text
+                    table.cell(row_idx, col_idx).text = str(cell_text)
             
             return True
-        except Exception:
+        except Exception as e:
+            self.processing_errors.append(f"{table_id} insertion error: {str(e)}")
             return False
     
     def _insert_figure_placeholder(self, doc, figure_id):
