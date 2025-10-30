@@ -71,7 +71,7 @@ def translate_document(file, output_format, progress=gr.Progress()):
         failed_segments = []
         
         # Parallel translation with result tracking
-        with ThreadPoolExecutor(max_workers=4) as executor:
+        with ThreadPoolExecutor(max_workers=32) as executor:
             # Submit all translation tasks
             future_to_index = {executor.submit(translate_segment, segment): i 
                              for i, segment in enumerate(segments)}
