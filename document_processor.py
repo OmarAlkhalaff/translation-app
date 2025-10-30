@@ -38,38 +38,34 @@ def segment_text(text, max_chars=400):
     """Split text into segments for translation, preserving placeholders"""
     import re
     
-    # Extract placeholders and replace with markers
-    placeholders = {}
+    # Extract placeholders and their positions
     placeholder_pattern = r'\[(TABLE_\d{3}|FIGURE_\d{3})\]'
+    placeholders = []
     
-    def replace_placeholder(match):
-        marker = f"__PLACEHOLDER_{len(placeholders)}__"
-        placeholders[marker] = match.group(0)
-        return marker
+    # Find all placeholders with their positions
+    for match in re.finditer(placeholder_pattern, text):
+        placeholders.append({
+            'id': match.group(0),
+            'start': match.start(),
+            'end': match.end()
+        })
     
-    text_with_markers = re.sub(placeholder_pattern, replace_placeholder, text)
+    # Remove placeholders from text for translation
+    clean_text = re.sub(placeholder_pattern, '', text)
     
-    # Segment the text
+    # Segment the clean text
     try:
-        sentences = nltk.sent_tokenize(text_with_markers)
+        sentences = nltk.sent_tokenize(clean_text)
     except LookupError:
         # Fallback to simple splitting if NLTK fails
-        sentences = text_with_markers.split('. ')
+        sentences = clean_text.split('. ')
         sentences = [s + '.' for s in sentences[:-1]] + [sentences[-1]]
     
     segments = []
     current_segment = ""
     
     for sentence in sentences:
-        # Check if sentence contains a placeholder marker
-        if '__PLACEHOLDER_' in sentence:
-            # Add current segment if exists
-            if current_segment:
-                segments.append(current_segment.strip())
-                current_segment = ""
-            # Add placeholder as separate segment
-            segments.append(sentence.strip())
-        elif len(current_segment + sentence) <= max_chars:
+        if len(current_segment + sentence) <= max_chars:
             current_segment += sentence + " "
         else:
             if current_segment:
@@ -79,14 +75,22 @@ def segment_text(text, max_chars=400):
     if current_segment:
         segments.append(current_segment.strip())
     
-    # Restore placeholders
-    restored_segments = []
-    for segment in segments:
-        for marker, placeholder in placeholders.items():
-            segment = segment.replace(marker, placeholder)
-        restored_segments.append(segment)
+    # Map placeholders to segments based on character position
+    segment_placeholders = {}
+    char_count = 0
     
-    return restored_segments
+    for seg_idx, segment in enumerate(segments):
+        segment_placeholders[seg_idx] = []
+        segment_end = char_count + len(segment)
+        
+        for placeholder in placeholders:
+            # Check if placeholder was in this segment's range
+            if char_count <= placeholder['start'] <= segment_end:
+                segment_placeholders[seg_idx].append(placeholder['id'])
+        
+        char_count = segment_end
+    
+    return segments, segment_placeholders
 
 def process_document(file):
     """Process uploaded document and extract text"""

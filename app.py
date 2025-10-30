@@ -59,7 +59,7 @@ def translate_document(file, output_format, progress=gr.Progress()):
                     return f"Element processing failed:\n{error_details}", None
         
         progress(0.2, desc="Segmenting text...")
-        segments = segment_text(text)
+        segments, segment_placeholders = segment_text(text)
         total_segments = len(segments)
         
         if total_segments == 0:
@@ -111,8 +111,17 @@ def translate_document(file, output_format, progress=gr.Progress()):
             error_msg += "\n\n".join(results)
             return error_msg, None
         
-        # All segments successfully translated
-        translated_text = "\n\n".join(results)
+        # All segments successfully translated - now restore placeholders
+        final_segments = []
+        for seg_idx, translated_seg in enumerate(results):
+            # Add translated text
+            final_segments.append(translated_seg)
+            # Add placeholders that belong after this segment
+            if seg_idx in segment_placeholders:
+                for placeholder in segment_placeholders[seg_idx]:
+                    final_segments.append(placeholder)
+        
+        translated_text = "\n\n".join(final_segments)
         
         progress(0.85, desc="Creating download file...")
         
